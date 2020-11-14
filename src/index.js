@@ -163,7 +163,7 @@ internals.Registry = class {
                         match.flags[flag.name] = sub;
                     }
                     else {                                                          // (match content)
-                        match.args[flag.name] = sub;
+                        match.args[arg.name] = sub;
                     }
 
                     break;
