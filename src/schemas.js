@@ -19,7 +19,7 @@ exports.definitions = Jade.arr(Jade.obj()).min(1);
 
 exports.definition = Jade.obj({
     name: Jade.str().required(),
-    alias: Jade.arr(Jade.str()).single(),
+    alias: Jade.arr(Jade.str()).unique().single(),
     args: Jade.arr().min(1),
     flags: Jade.arr().min(1),
     data: Jade.any(),
