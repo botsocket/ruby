@@ -57,13 +57,7 @@ internals.Registry = class {
             const args = definition.args;
             if (args) {
                 for (let i = 0; i < args.length; i++) {
-                    let arg = args[i];
-
-                    if (typeof arg === 'string') {
-                        arg = { name: arg };
-                    }
-
-                    arg = Schemas.argLike.attempt(arg);
+                    const arg = internals.normalizeArgLike(args[i]);
 
                     Bone.assert(arg.match !== 'content' || i === args.length - 1, `Argument "${arg.name}" must be defined last because it is matching content`);
 
@@ -76,14 +70,8 @@ internals.Registry = class {
             const flags = definition.flags;
             if (flags) {
                 const normalized = {};
-                for (let flag of definition.flags) {
-                    if (typeof flag === 'string') {
-                        flag = { name: flag };
-                    }
-
-                    flag = Schemas.argLike.attempt(flag);
-
-                    normalized[flag.name] = flag;
+                for (const flag of definition.flags) {
+                    normalized[flag.name] = internals.normalizeArgLike(flag);
                 }
 
                 if (Object.keys(normalized).length > 0) {
@@ -258,6 +246,15 @@ internals.Definitions = class extends Map {
 internals.escapeRegex = function (raw) {
 
     return raw.replace(/[\^\$\.\*\+\-\?\=\!\:\|\\\/\(\)\[\]\{\}\,]/g, '\\$&');
+};
+
+internals.normalizeArgLike = function (arg) {
+
+    if (typeof arg === 'string') {
+        arg = { name: arg };
+    }
+
+    return Schemas.argLike.attempt(arg);
 };
 
 internals.value = function (value, definition) {
