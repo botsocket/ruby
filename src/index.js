@@ -2,10 +2,9 @@
 
 const Bone = require('@botsocket/bone');
 
-const internals = {
-    //         (name)             (*)(count)
-    argRx: /^{([a-zA-Z0-9_-]+)}(?:(\*)([0-9]+)?)?$/,
-};
+const Schemas = require('./schemas');
+
+const internals = {};
 
 exports.registry = function (options) {
 
@@ -15,119 +14,224 @@ exports.registry = function (options) {
 internals.Registry = class {
     constructor(options = {}) {
 
-        internals.assertBaseOptions(options);
+        const settings = Schemas.options.attempt(options);
 
-        this._prefix = options.prefix || '!';
-        this._delimiter = options.delimiter || /\s+/;
+        /*
+            !name (arg1) ("quoted literal") (--flag1 value1) (list1,list2) (--booleanFlag) (--flag2 list1,list2) (match content)
+            !name (--flag match content)
+        */
 
-        this._definitions = [];
+        // Generate regular expressions
+
+        const prefix = internals.escapeRegex(settings.prefix);
+        const delimiter = settings.delimiter ? internals.escapeRegex(settings.delimiter) + '\\s*' : '\\s+';
+        const flagPrefix = internals.escapeRegex(settings.flagPrefix);
+
+        const quote = typeof settings.quote === 'string' ? [settings.quote, settings.quote] : settings.quote;
+        const opening = internals.escapeRegex(quote[0]);
+        const closing = internals.escapeRegex(quote[1]);
+
+        const delimiterOrEOL = '(?:' + delimiter + '|$)';                                        // Do not use lookahead clauses because we want the delimiter to be included in the matching string
+
+        this._regexes = {
+            literal: new RegExp('^' + opening + '(.*?)' + closing + delimiterOrEOL),             // Matches literals followed by a delimiter or EOL
+            delimiter: new RegExp('^' + delimiter),                                              // Matches a delimiter
+            flag: new RegExp('^' + flagPrefix + '(.*?)' + delimiterOrEOL),                       // Matches a flag followed by a delimiter or EOL
+            base: new RegExp('^' + prefix + '(.*?)' + delimiterOrEOL + '(.*)'),                  // Matches the prefix, command name and arguments
+        };
+
+        this._definitions = new internals.Definitions();
     }
 
-    add(definition) {
+    add(...definitions) {
 
-        Bone.assert(typeof definition === 'object', 'Command must be an object');
-        Bone.assert(typeof definition.syntax === 'string', 'Option syntax must be a string');
-        Bone.assert(definition.alias === undefined || typeof definition.alias === 'string' || Array.isArray(definition.alias), 'Option alias must be a string or an array');
-        internals.assertBaseOptions(definition);
+        definitions = Schemas.definitions.attempt(definitions);
 
-        // Prepare definition
+        // Process definitions
 
-        definition = Bone.clone(definition, { shallow: true });
+        for (let definition of definitions) {
+            definition = Schemas.definition.attempt(definition);
 
-        if (typeof definition.alias === 'string') {
-            definition.alias = [definition.alias];
-        }
+            // Normalize args
 
-        // Parse syntax
+            const args = definition.args;
+            if (args) {
+                for (let i = 0; i < args.length; i++) {
+                    let arg = args[i];
 
-        const delimiter = definition.delimiter || this._delimiter;
-        const [name, ...args] = definition.syntax.split(delimiter);
-        definition.name = name;
-        delete definition.syntax;
+                    if (typeof arg === 'string') {
+                        arg = { name: arg };
+                    }
 
-        if (args.length) {
-            definition.args = [];
+                    arg = Schemas.argLike.attempt(arg);
 
-            for (let i = 0; i < args.length; i++) {
-                const arg = args[i];
-                const match = internals.argRx.exec(arg);
+                    Bone.assert(arg.match !== 'content' || i === args.length - 1, `Argument "${arg.name}" must be defined last because it is matching content`);
 
-                Bone.assert(match, `Invalid argument definition: ${arg}`);
+                    args[i] = arg;
+                }
+            }
 
-                const count = match[3]
-                    ? parseInt(match[3], 10)                // With count
-                    : (match[2] ? Infinity : 1);            // * without count
+            // Normalize flags
 
-                Bone.assert(count !== Infinity || i === args.length - 1, 'Greedy arguments must be the last argument in the syntax');
+            const flags = definition.flags;
+            if (flags) {
+                const normalized = {};
+                for (let flag of definition.flags) {
+                    flag = Schemas.argLike.attempt(flag);
 
-                definition.args.push({
-                    name: match[1],
-                    count,
-                });
+                    const name = flag.name;
+                    delete flag.name;
+                    normalized[name] = flag;
+                }
+
+                if (Object.keys(normalized).length > 0) {
+                    definition.flags = normalized;
+                }
+            }
+
+            // Store definitions by names
+
+            const name = definition.name;
+            this._definitions.set(name, definition);
+
+            // Store definitions by aliases
+
+            const aliases = definition.alias;
+            if (aliases) {
+                for (const alias of aliases) {
+                    this._definitions.set(alias, definition);
+                }
             }
         }
 
-        this._definitions.push(definition);
+        return this;
+    }
+
+    get(name) {
+
+        return this._definitions.get(name);
     }
 
     match(message) {
 
+        // Match base
+
+        const baseMatch = message.match(this._regexes.base);
+        if (!baseMatch) {
+            return null;
+        }
+
+        const name = baseMatch[1];
+        const definitions = this._definitions.get(name);
+
+        if (!definitions) {
+            return null;
+        }
+
+        // Match arguments
+
+        const args = baseMatch[2];
+
         const matches = [];
+        for (const definition of definitions) {
+            const match = { name, args: {}, flags: {}, unknowns: [] };
+            let idx = 0;                                                                // Current argument definition pointer
+            let current = '';                                                           // Current argument value
+            let flag = false;                                                           // Previous parsed flag definition
+            let argDefinition;                                                          // Current argument definition
 
-        for (const definition of this._definitions) {
+            const flush = () => {
 
-            // Match prefix
+                if (flag) {                                                             // (--flag value) or (--flag list1,list2)
+                    match.flags[flag.name] = internals.value(current, flag);
+                }
+                else if (argDefinition) {                                               // (value) or (list1,list2)
+                    match.args[argDefinition.name] = internals.value(current, argDefinition);
+                    idx++;
+                }
+                else {
+                    match.unknowns.push({ arg: current });
+                }
 
-            const prefix = definition.prefix || this._prefix;
-            const rawPrefix = message.slice(0, prefix.length);
-
-            if (rawPrefix !== prefix) {
-                continue;
-            }
-
-            // Split message
-
-            const delimiter = definition.delimiter || this._delimiter;
-            const [rawName, ...rawArgs] = message.slice(prefix.length).split(delimiter);
-
-            // Match name or alias
-
-            const name = definition.name;
-            const alias = definition.alias;
-            if (rawName !== name && !alias.includes(rawName)) {
-                continue;
-            }
-
-            const match = { name, args: {} };
-
-            // Match arguments
-
-            const args = definition.args;
+                current = '';
+            };
 
             for (let i = 0; i < args.length; i++) {
-                const arg = args[i];
+                const sub = args.slice(i);
 
-                if (arg.count === 1) {
-                    match.args[arg.name] = rawArgs.shift();
+                argDefinition = definition.args ? definition.args[idx] : null;
+
+                // Match content
+
+                if (argDefinition &&
+                    argDefinition.match === 'content') {
+
+                    if (flag) {                                                         // (--flag match content)
+                        match.flags[flag.name] = sub;
+                    }
+                    else {                                                              // (match content)
+                        match.args[argDefinition.name] = sub;
+                    }
+
+                    break;
+                }
+
+                // Match literal
+
+                const literalMatch = sub.match(this._regexes.literal);
+                if (literalMatch) {
+                    const value = literalMatch[1];
+
+                    if (flag) {                                                         // (--flag "quoted literal")
+                        match.flags[flag.name] = value;
+                    }
+                    else if (argDefinition) {                                           // ("quoted literal")
+                        match.args[argDefinition.name] = value;
+                        idx++;
+                    }
+                    else {
+                        match.unknowns.push({ arg: value });
+                    }
+
+                    flag = false;
+                    i += literalMatch[0].length - 1;
                     continue;
                 }
 
-                let count = 1;
-                while (count <= arg.count) {
-                    const rawArg = rawArgs.shift();
-                    if (!rawArg) {
-                        break;
+                // Match flag
+
+                const flagMatch = sub.match(this._regexes.flag);
+                if (flagMatch) {
+                    if (flag) {                                                         // (--booleanFlag1) (--booleanFlag2)
+                        match.flags[flag.name] = true;
                     }
 
-                    count++;
-
-                    if (match.args[arg.name]) {
-                        match.args[arg.name].push(rawArg);
-                        continue;
+                    const flagName = flagMatch[1];
+                    flag = definition.flags && definition.flags[flagName];
+                    if (!flag) {
+                        match.unknowns.push({ flag: flagName });
+                        flag = false;
                     }
 
-                    match.args[arg.name] = [rawArg];
+                    i += flagMatch[0].length - 1;
+                    continue;
                 }
+
+                // Match delimiter
+
+                const delimiterMatch = sub.match(this._regexes.delimiter);
+                if (delimiterMatch) {
+                    flush();
+                    flag = false;
+                    i += delimiterMatch[0].length - 1;
+                    continue;
+                }
+
+                current += args[i];
+            }
+
+            if (current) {
+                flush();
             }
 
             matches.push(match);
@@ -137,9 +241,30 @@ internals.Registry = class {
     }
 };
 
-internals.assertBaseOptions = function (options) {
+internals.Definitions = class extends Map {
 
-    Bone.assert(options.prefix === undefined || typeof options.prefix === 'string', 'Option prefix must be a string');
-    Bone.assert(options.delimiter === undefined || typeof options.delimiter === 'string' || options.delimiter instanceof RegExp, 'Option delimiter must be a string or a regular expression');
-    Bone.assert(options.delimiter instanceof RegExp === false || (!options.delimiter.includes('y') && !options.delimiter.includes('g')), 'Option delimiter must not have sticky or global flag');
+    set(key, definition) {
+
+        const set = this.get(key);
+        if (set) {
+            set.push(definition);
+            return;
+        }
+
+        super.set(key, [definition]);
+    }
+};
+
+internals.escapeRegex = function (raw) {
+
+    return raw.replace(/[\^\$\.\*\+\-\?\=\!\:\|\\\/\(\)\[\]\{\}\,]/g, '\\$&');
+};
+
+internals.value = function (value, definition) {
+
+    if (definition.match === 'list') {
+        return value.split(definition.delimiter);
+    }
+
+    return value;
 };
