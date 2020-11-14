@@ -77,11 +77,13 @@ internals.Registry = class {
             if (flags) {
                 const normalized = {};
                 for (let flag of definition.flags) {
+                    if (typeof flag === 'string') {
+                        flag = { name: flag };
+                    }
+
                     flag = Schemas.argLike.attempt(flag);
 
-                    const name = flag.name;
-                    delete flag.name;
-                    normalized[name] = flag;
+                    normalized[flag.name] = flag;
                 }
 
                 if (Object.keys(normalized).length > 0) {
