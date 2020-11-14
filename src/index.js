@@ -57,7 +57,7 @@ internals.Registry = class {
             const args = definition.args;
             if (args) {
                 for (let i = 0; i < args.length; i++) {
-                    const arg = internals.normalizeArgLike(args[i]);
+                    const arg = Schemas.args.attempt(internals.normalizeArgLike(args[i]));
 
                     Bone.assert(arg.match !== 'content' || i === args.length - 1, `Argument "${arg.name}" must be defined last because it is matching content`);
 
@@ -70,8 +70,9 @@ internals.Registry = class {
             const flags = definition.flags;
             if (flags) {
                 const normalized = {};
-                for (const flag of definition.flags) {
-                    normalized[flag.name] = internals.normalizeArgLike(flag);
+                for (let flag of flags) {
+                    flag = Schemas.flags.attempt(internals.normalizeArgLike(flag));
+                    normalized[flag.name] = flag;
                 }
 
                 if (Object.keys(normalized).length > 0) {
@@ -124,7 +125,8 @@ internals.Registry = class {
 
         const matches = [];
         for (const definition of definitions) {
-            const match = { name, args: {}, flags: {}, unknowns: [] };
+            const match = { name: definition.name, args: {}, flags: {}, unknowns: [] };
+
             let idx = 0;                                                            // Current argument definition pointer
             let current = '';                                                       // Current argument value
             let flag = null;                                                        // Previous parsed flag definition
@@ -138,6 +140,7 @@ internals.Registry = class {
 
                 if (flag) {                                                         // (--flag value) (--flag list1,list2) (--flag "quote string")
                     match.flags[flag.name] = literal ? current : internals.value(current, flag);
+                    flag = null;
                 }
                 else if (arg) {                                                     // (value) (list1,list2) ("quoted string")
                     match.args[arg.name] = literal ? current : internals.value(current, arg);
@@ -156,16 +159,18 @@ internals.Registry = class {
 
                 // Match content
 
+                if (flag &&
+                    flag.match === 'content') {                                     // (--flag match content)
+
+                    match.flags[flag.name] = sub;
+                    flag = null;
+                    break;
+                }
+
                 if (arg &&
-                    arg.match === 'content') {
+                    arg.match === 'content') {                                      // (match content)
 
-                    if (flag) {                                                     // (--flag match content)
-                        match.flags[flag.name] = sub;
-                    }
-                    else {                                                          // (match content)
-                        match.args[arg.name] = sub;
-                    }
-
+                    match.args[arg.name] = sub;
                     break;
                 }
 
@@ -175,7 +180,6 @@ internals.Registry = class {
                 if (literalMatch) {
                     current = literalMatch[1];
                     flush(true);
-                    flag = null;
                     i += literalMatch[0].length - 1;
                     continue;
                 }
@@ -184,7 +188,7 @@ internals.Registry = class {
 
                 const flagMatch = sub.match(this._regexes.flag);
                 if (flagMatch) {
-                    if (flag) {                                                     // (--booleanFlag1) (--booleanFlag2)
+                    if (flag) {                                                     // (--booleanFlag) (implicit)
                         match.flags[flag.name] = true;
                     }
 
@@ -192,6 +196,10 @@ internals.Registry = class {
                     flag = definition.flags && definition.flags[flagName];
                     if (!flag) {
                         match.unknowns.push({ flag: flagName });
+                        flag = null;
+                    }
+                    else if (flag.match === 'boolean') {                            // (--booleanFlag) (explicit)
+                        match.flags[flag.name] = true;
                         flag = null;
                     }
 
@@ -204,7 +212,6 @@ internals.Registry = class {
                 const delimiterMatch = sub.match(this._regexes.delimiter);
                 if (delimiterMatch) {
                     flush();
-                    flag = null;
                     i += delimiterMatch[0].length - 1;
                     continue;
                 }
@@ -218,7 +225,7 @@ internals.Registry = class {
 
             // Last flag
 
-            if (flag) {
+            if (flag) {                                                             // (--booleanFlag) (implicit)
                 match.flags[flag.name] = true;
             }
 
@@ -251,10 +258,10 @@ internals.escapeRegex = function (raw) {
 internals.normalizeArgLike = function (arg) {
 
     if (typeof arg === 'string') {
-        arg = { name: arg };
+        return { name: arg };
     }
 
-    return Schemas.argLike.attempt(arg);
+    return arg;
 };
 
 internals.value = function (value, definition) {

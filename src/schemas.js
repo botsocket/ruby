@@ -2,6 +2,8 @@
 
 const Jade = require('@botsocket/jade');
 
+const internals = {};
+
 exports.options = Jade.obj({
     prefix: Jade.str().default('!'),
     delimiter: Jade.str(),
@@ -25,7 +27,7 @@ exports.definition = Jade.obj({
     data: Jade.any(),
 });
 
-exports.argLike = Jade.obj({
+internals.argLike = {
     name: Jade.str().required(),
     match: ['content', 'list'],
     delimiter: Jade.when('match', {
@@ -33,4 +35,11 @@ exports.argLike = Jade.obj({
         then: Jade.str().default(','),
         otherwise: Jade.forbidden(),
     }),
+};
+
+exports.args = Jade.obj(internals.argLike);
+
+exports.flags = Jade.obj({
+    ...internals.argLike,
+    match: [...internals.argLike.match, 'boolean'],
 });
