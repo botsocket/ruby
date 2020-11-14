@@ -132,23 +132,27 @@ internals.Registry = class {
 
         // Match arguments
 
-        const args = baseMatch[2];
+        const raw = baseMatch[2];
 
         const matches = [];
         for (const definition of definitions) {
             const match = { name, args: {}, flags: {}, unknowns: [] };
-            let idx = 0;                                                                // Current argument definition pointer
-            let current = '';                                                           // Current argument value
-            let flag = false;                                                           // Previous parsed flag definition
-            let argDefinition;                                                          // Current argument definition
+            let idx = 0;                                                            // Current argument definition pointer
+            let current = '';                                                       // Current argument value
+            let flag = null;                                                        // Previous parsed flag definition
+            let arg = null;                                                         // Current argument definition
 
-            const flush = () => {
+            const flush = (literal) => {
 
-                if (flag) {                                                             // (--flag value) or (--flag list1,list2)
-                    match.flags[flag.name] = internals.value(current, flag);
+                if (!current) {
+                    return;
                 }
-                else if (argDefinition) {                                               // (value) or (list1,list2)
-                    match.args[argDefinition.name] = internals.value(current, argDefinition);
+
+                if (flag) {                                                         // (--flag value) (--flag list1,list2) (--flag "quote string")
+                    match.flags[flag.name] = literal ? current : internals.value(current, flag);
+                }
+                else if (arg) {                                                     // (value) (list1,list2) ("quoted string")
+                    match.args[arg.name] = literal ? current : internals.value(current, arg);
                     idx++;
                 }
                 else {
@@ -158,21 +162,20 @@ internals.Registry = class {
                 current = '';
             };
 
-            for (let i = 0; i < args.length; i++) {
-                const sub = args.slice(i);
-
-                argDefinition = definition.args ? definition.args[idx] : null;
+            for (let i = 0; i < raw.length; i++) {
+                const sub = raw.slice(i);
+                arg = definition.args ? definition.args[idx] : null;
 
                 // Match content
 
-                if (argDefinition &&
-                    argDefinition.match === 'content') {
+                if (arg &&
+                    arg.match === 'content') {
 
-                    if (flag) {                                                         // (--flag match content)
+                    if (flag) {                                                     // (--flag match content)
                         match.flags[flag.name] = sub;
                     }
-                    else {                                                              // (match content)
-                        match.args[argDefinition.name] = sub;
+                    else {                                                          // (match content)
+                        match.args[flag.name] = sub;
                     }
 
                     break;
@@ -182,20 +185,9 @@ internals.Registry = class {
 
                 const literalMatch = sub.match(this._regexes.literal);
                 if (literalMatch) {
-                    const value = literalMatch[1];
-
-                    if (flag) {                                                         // (--flag "quoted literal")
-                        match.flags[flag.name] = value;
-                    }
-                    else if (argDefinition) {                                           // ("quoted literal")
-                        match.args[argDefinition.name] = value;
-                        idx++;
-                    }
-                    else {
-                        match.unknowns.push({ arg: value });
-                    }
-
-                    flag = false;
+                    current = literalMatch[1];
+                    flush(true);
+                    flag = null;
                     i += literalMatch[0].length - 1;
                     continue;
                 }
@@ -204,7 +196,7 @@ internals.Registry = class {
 
                 const flagMatch = sub.match(this._regexes.flag);
                 if (flagMatch) {
-                    if (flag) {                                                         // (--booleanFlag1) (--booleanFlag2)
+                    if (flag) {                                                     // (--booleanFlag1) (--booleanFlag2)
                         match.flags[flag.name] = true;
                     }
 
@@ -212,7 +204,7 @@ internals.Registry = class {
                     flag = definition.flags && definition.flags[flagName];
                     if (!flag) {
                         match.unknowns.push({ flag: flagName });
-                        flag = false;
+                        flag = null;
                     }
 
                     i += flagMatch[0].length - 1;
@@ -224,16 +216,22 @@ internals.Registry = class {
                 const delimiterMatch = sub.match(this._regexes.delimiter);
                 if (delimiterMatch) {
                     flush();
-                    flag = false;
+                    flag = null;
                     i += delimiterMatch[0].length - 1;
                     continue;
                 }
 
-                current += args[i];
+                current += raw[i];
             }
 
-            if (current) {
-                flush();
+            // Remaining characters
+
+            flush();
+
+            // Last flag
+
+            if (flag) {
+                match.flags[flag.name] = true;
             }
 
             matches.push(match);
