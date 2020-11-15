@@ -174,37 +174,40 @@ internals.Registry = class {
                     break;
                 }
 
-                // Match literal
+                if (!current) {
 
-                const literalMatch = sub.match(this._regexes.literal);
-                if (literalMatch) {
-                    current = literalMatch[1];
-                    flush(true);
-                    i += literalMatch[0].length - 1;
-                    continue;
-                }
+                    // Match literal
 
-                // Match flag
-
-                const flagMatch = sub.match(this._regexes.flag);
-                if (flagMatch) {
-                    if (flag) {                                                     // (--booleanFlag) (implicit)
-                        match.flags[flag.name] = true;
+                    const literalMatch = sub.match(this._regexes.literal);
+                    if (literalMatch) {
+                        current = literalMatch[1];
+                        flush(true);
+                        i += literalMatch[0].length - 1;
+                        continue;
                     }
 
-                    const flagName = flagMatch[1];
-                    flag = definition.flags && definition.flags[flagName];
-                    if (!flag) {
-                        match.unknowns.push({ flag: flagName });
-                        flag = null;
-                    }
-                    else if (flag.match === 'boolean') {                            // (--booleanFlag) (explicit)
-                        match.flags[flag.name] = true;
-                        flag = null;
-                    }
+                    // Match flag
 
-                    i += flagMatch[0].length - 1;
-                    continue;
+                    const flagMatch = sub.match(this._regexes.flag);
+                    if (flagMatch) {
+                        if (flag) {                                                     // (--booleanFlag) (implicit)
+                            match.flags[flag.name] = true;
+                        }
+
+                        const flagName = flagMatch[1];
+                        flag = definition.flags && definition.flags[flagName];
+                        if (!flag) {
+                            match.unknowns.push({ flag: flagName });
+                            flag = null;
+                        }
+                        else if (flag.match === 'boolean') {                            // (--booleanFlag) (explicit)
+                            match.flags[flag.name] = true;
+                            flag = null;
+                        }
+
+                        i += flagMatch[0].length - 1;
+                        continue;
+                    }
                 }
 
                 // Match delimiter
