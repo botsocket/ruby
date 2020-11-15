@@ -29,15 +29,13 @@ describe('registry()', () => {
             const registry = Ruby.registry();
             registry.add({ name: 'simple' });
 
-            const match = registry.match('?simple');
-            expect(match).toBe(null);
+            expect(registry.match('?simple')).toBe(null);
         });
 
         it('should return null if definiton is not found', () => {
 
             const registry = Ruby.registry();
-            const match = registry.match('!simple');
-            expect(match).toBe(null);
+            expect(registry.match('!simple')).toBe(null);
         });
 
         it('should match simple commands', () => {
@@ -46,9 +44,78 @@ describe('registry()', () => {
             registry.add({ name: 'simple' });
 
             const match = registry.match('!simple');
-            const expected = [{ name: 'simple', args: {}, flags: {}, unknowns: [] }];
+            const expected = [
+                {
+                    definition: { name: 'simple' },
+                    args: {},
+                    flags: {},
+                    unknowns: [],
+                },
+            ];
 
             expect(Bone.equal(match, expected)).toBe(true);
+        });
+
+        it('should return data associated to a definition', () => {
+
+            const data = { handler: () => { } };
+
+            const registry = Ruby.registry();
+            registry.add({ name: 'simple', data });
+
+            const match = registry.match('!simple');
+            const expected = [
+                {
+                    definition: { name: 'simple', data },
+                    args: {},
+                    flags: {},
+                    unknowns: [],
+                },
+            ];
+
+            expect(Bone.equal(match, expected)).toBe(true);
+        });
+
+        it('should return multiple matches', () => {
+
+            const registry = Ruby.registry();
+            registry.add({ name: 'simple' }, { name: 'simple', args: ['test'] });
+
+            const match = registry.match('!simple');
+            const expected = [
+                {
+                    definition: { name: 'simple' },
+                    args: {},
+                    flags: {},
+                    unknowns: [],
+                },
+                {
+                    definition: { name: 'simple', args: [{ name: 'test' }] },
+                    args: {},
+                    flags: {},
+                    unknowns: [],
+                },
+            ];
+
+            expect(Bone.equal(match, expected)).toBe(true);
+
+            const match2 = registry.match('!simple test');
+            const expected2 = [
+                {
+                    definition: { name: 'simple' },
+                    args: {},
+                    flags: {},
+                    unknowns: [{ arg: 'test' }],
+                },
+                {
+                    definition: { name: 'simple', args: [{ name: 'test' }] },
+                    args: { test: 'test' },
+                    flags: {},
+                    unknowns: [],
+                },
+            ];
+
+            expect(Bone.equal(match2, expected2)).toBe(true);
         });
 
         it('should match simple commands with aliases', () => {
@@ -57,7 +124,15 @@ describe('registry()', () => {
             registry.add({ name: 'simple', alias: 'easy' });
 
             const match = registry.match('!simple');
-            const expected = [{ name: 'simple', args: {}, flags: {}, unknowns: [] }];
+            const expected = [
+                {
+                    definition: { name: 'simple', alias: ['easy'] },
+                    args: {},
+                    flags: {},
+                    unknowns: [],
+                },
+            ];
+
             expect(Bone.equal(match, expected)).toBe(true);
 
             const match2 = registry.match('!easy');
@@ -72,7 +147,7 @@ describe('registry()', () => {
             const match = registry.match('!ban member reason');
             const expected = [
                 {
-                    name: 'ban',
+                    definition: { name: 'ban' },
                     args: {},
                     flags: {},
                     unknowns: [{ arg: 'member' }, { arg: 'reason' }],
@@ -87,13 +162,31 @@ describe('registry()', () => {
             const registry = Ruby.registry();
             registry.add({ name: 'ban', args: ['member', 'reason'] });
 
-            const match = registry.match('!ban member reason someOtherReason');
+            const match = registry.match('!ban member reason');
             const expected = [
                 {
-                    name: 'ban',
+                    definition: { name: 'ban', args: [{ name: 'member' }, { name: 'reason' }] },
                     args: { member: 'member', reason: 'reason' },
                     flags: {},
-                    unknowns: [{ arg: 'someOtherReason' }],
+                    unknowns: [],
+                },
+            ];
+
+            expect(Bone.equal(match, expected)).toBe(true);
+        });
+
+        it('should match commands with unknown arguments', () => {
+
+            const registry = Ruby.registry();
+            registry.add({ name: 'ban', args: ['member'] });
+
+            const match = registry.match('!ban member reason');
+            const expected = [
+                {
+                    definition: { name: 'ban', args: [{ name: 'member' }] },
+                    args: { member: 'member' },
+                    flags: {},
+                    unknowns: [{ arg: 'reason' }],
                 },
             ];
 
@@ -108,7 +201,7 @@ describe('registry()', () => {
             const match = registry.match('!ban member "This is the reason"');
             const expected = [
                 {
-                    name: 'ban',
+                    definition: { name: 'ban', args: [{ name: 'member' }, { name: 'reason' }] },
                     args: { member: 'member', reason: 'This is the reason' },
                     flags: {},
                     unknowns: [],
@@ -129,10 +222,39 @@ describe('registry()', () => {
             const match = registry.match('!ban member This is the reason');
             const expected = [
                 {
-                    name: 'ban',
+                    definition: { name: 'ban', args: [{ name: 'member' }, { name: 'reason', match: 'content' }] },
                     args: { member: 'member', reason: 'This is the reason' },
                     flags: {},
                     unknowns: [],
+                },
+            ];
+
+            expect(Bone.equal(match, expected)).toBe(true);
+        });
+
+        it('should reset regex before matching a second definition', () => {
+
+            const registry = Ruby.registry();
+            registry.add({
+                name: 'ban',
+                args: ['member', { name: 'reason', match: 'content' }],
+            }, {
+                name: 'ban',
+            });
+
+            const match = registry.match('!ban member This is the reason');
+            const expected = [
+                {
+                    definition: { name: 'ban', args: [{ name: 'member' }, { name: 'reason', match: 'content' }] },
+                    args: { member: 'member', reason: 'This is the reason' },
+                    flags: {},
+                    unknowns: [],
+                },
+                {
+                    definition: { name: 'ban' },
+                    args: {},
+                    flags: {},
+                    unknowns: [{ arg: 'member' }, { arg: 'This' }, { arg: 'is' }, { arg: 'the' }, { arg: 'reason' }],
                 },
             ];
 
@@ -150,7 +272,13 @@ describe('registry()', () => {
             const match = registry.match('!ban member1,member2,member3 reason');
             const expected = [
                 {
-                    name: 'ban',
+                    definition: {
+                        name: 'ban',
+                        args: [
+                            { name: 'members', match: 'list', delimiter: ',' },
+                            { name: 'reason' },
+                        ],
+                    },
                     args: { members: ['member1', 'member2', 'member3'], reason: 'reason' },
                     flags: {},
                     unknowns: [],
@@ -172,7 +300,13 @@ describe('registry()', () => {
             const match = registry.match('!ban member --delay 10 "This is the reason"');
             const expected = [
                 {
-                    name: 'ban',
+                    definition: {
+                        name: 'ban',
+                        args: [{ name: 'member' }, { name: 'reason' }],
+                        flags: {
+                            delay: { name: 'delay' },
+                        },
+                    },
                     args: { member: 'member', reason: 'This is the reason' },
                     flags: { delay: '10' },
                     unknowns: [],
@@ -190,7 +324,7 @@ describe('registry()', () => {
             const match = registry.match('!ban member --someUnknownFlag "This is the reason"');
             const expected = [
                 {
-                    name: 'ban',
+                    definition: { name: 'ban', args: [{ name: 'member' }, { name: 'reason' }] },
                     args: { member: 'member', reason: 'This is the reason' },
                     flags: {},
                     unknowns: [{ flag: 'someUnknownFlag' }],
@@ -212,7 +346,13 @@ describe('registry()', () => {
             const match = registry.match('!ban --reason "This is the reason" member');
             const expected = [
                 {
-                    name: 'ban',
+                    definition: {
+                        name: 'ban',
+                        args: [{ name: 'member' }],
+                        flags: {
+                            reason: { name: 'reason' },
+                        },
+                    },
                     args: { member: 'member' },
                     flags: { reason: 'This is the reason' },
                     unknowns: [],
@@ -234,7 +374,13 @@ describe('registry()', () => {
             const match = registry.match('!ban member --reason This is the reason');
             const expected = [
                 {
-                    name: 'ban',
+                    definition: {
+                        name: 'ban',
+                        args: [{ name: 'member' }],
+                        flags: {
+                            reason: { name: 'reason', match: 'content' },
+                        },
+                    },
                     args: { member: 'member' },
                     flags: { reason: 'This is the reason' },
                     unknowns: [],
@@ -256,7 +402,13 @@ describe('registry()', () => {
             const match = registry.match('!ban --members member1,member2,member3 "This is the reason"');
             const expected = [
                 {
-                    name: 'ban',
+                    definition: {
+                        name: 'ban',
+                        args: [{ name: 'reason' }],
+                        flags: {
+                            members: { name: 'members', match: 'list', delimiter: ',' },
+                        },
+                    },
                     args: { reason: 'This is the reason' },
                     flags: { members: ['member1', 'member2', 'member3'] },
                     unknowns: [],
@@ -278,7 +430,13 @@ describe('registry()', () => {
             const match = registry.match('!ban member "This is the reason" --sendBanAppeal');
             const expected = [
                 {
-                    name: 'ban',
+                    definition: {
+                        name: 'ban',
+                        args: [{ name: 'member' }, { name: 'reason' }],
+                        flags: {
+                            sendBanAppeal: { name: 'sendBanAppeal' },
+                        },
+                    },
                     args: { member: 'member', reason: 'This is the reason' },
                     flags: { sendBanAppeal: true },
                     unknowns: [],
@@ -290,7 +448,13 @@ describe('registry()', () => {
             const match2 = registry.match('!ban member --sendBanAppeal --someUnknownFlag "This is the reason"');
             const expected2 = [
                 {
-                    name: 'ban',
+                    definition: {
+                        name: 'ban',
+                        args: [{ name: 'member' }, { name: 'reason' }],
+                        flags: {
+                            sendBanAppeal: { name: 'sendBanAppeal' },
+                        },
+                    },
                     args: { member: 'member', reason: 'This is the reason' },
                     flags: { sendBanAppeal: true },
                     unknowns: [{ flag: 'someUnknownFlag' }],
@@ -312,10 +476,193 @@ describe('registry()', () => {
             const match = registry.match('!ban member --sendBanAppeal "This is the reason"');
             const expected = [
                 {
-                    name: 'ban',
+                    definition: {
+                        name: 'ban',
+                        args: [{ name: 'member' }, { name: 'reason' }],
+                        flags: {
+                            sendBanAppeal: { name: 'sendBanAppeal', match: 'boolean' },
+                        },
+                    },
                     args: { member: 'member', reason: 'This is the reason' },
                     flags: { sendBanAppeal: true },
                     unknowns: [],
+                },
+            ];
+
+            expect(Bone.equal(match, expected)).toBe(true);
+        });
+
+        it('should match commands with literal arguments with mismatching/nested quotes', () => {
+
+            const registry = Ruby.registry();
+            registry.add({ name: 'ban', args: ['member', 'reason'] });
+
+            const match = registry.match('!ban member "This is the reason""');
+            const expected = [
+                {
+                    definition: { name: 'ban', args: [{ name: 'member' }, { name: 'reason' }] },
+                    args: { member: 'member', reason: 'This is the reason"' },
+                    flags: {},
+                    unknowns: [],
+                },
+            ];
+
+            expect(Bone.equal(match, expected)).toBe(true);
+
+            const match2 = registry.match('!ban member ""This is the reason"');
+            const expected2 = [
+                {
+                    definition: { name: 'ban', args: [{ name: 'member' }, { name: 'reason' }] },
+                    args: { member: 'member', reason: '"This is the reason' },
+                    flags: {},
+                    unknowns: [],
+                },
+            ];
+
+            expect(Bone.equal(match2, expected2)).toBe(true);
+
+            const match3 = registry.match('!ban member ""This is the reason""');
+            const expected3 = [
+                {
+                    definition: { name: 'ban', args: [{ name: 'member' }, { name: 'reason' }] },
+                    args: { member: 'member', reason: '"This is the reason"' },
+                    flags: {},
+                    unknowns: [],
+                },
+            ];
+
+            expect(Bone.equal(match3, expected3)).toBe(true);
+
+            const match4 = registry.match('!ban m"ember" "reason"s');
+            const expected4 = [
+                {
+                    definition: { name: 'ban', args: [{ name: 'member' }, { name: 'reason' }] },
+                    args: { member: 'm"ember"', reason: '"reason"s' },
+                    flags: {},
+                    unknowns: [],
+                },
+            ];
+
+            expect(Bone.equal(match4, expected4)).toBe(true);
+        });
+
+        it('should match custom prefixes', () => {
+
+            const registry = Ruby.registry({ prefix: '?' });
+            registry.add({ name: 'simple' });
+
+            const match = registry.match('?simple');
+            const expected = [
+                {
+                    definition: { name: 'simple' },
+                    args: {},
+                    flags: {},
+                    unknowns: [],
+                },
+            ];
+
+            expect(Bone.equal(match, expected)).toBe(true);
+        });
+
+        it('should match custom delimiters', () => {
+
+            const registry = Ruby.registry({ delimiter: ',' });
+            registry.add({
+                name: 'ban',
+                args: ['member', 'reason'],
+                flags: [{ name: 'sendBanAppeal', match: 'boolean' }],
+            });
+
+            const match = registry.match('!ban  , member,    --sendBanAppeal ,  "This is the reason", unknown');
+            const expected = [
+                {
+                    definition: {
+                        name: 'ban',
+                        args: [{ name: 'member' }, { name: 'reason' }],
+                        flags: {
+                            sendBanAppeal: { name: 'sendBanAppeal', match: 'boolean' },
+                        },
+                    },
+                    args: { member: 'member', reason: 'This is the reason' },
+                    flags: { sendBanAppeal: true },
+                    unknowns: [{ arg: 'unknown' }],
+                },
+            ];
+
+            expect(Bone.equal(match, expected)).toBe(true);
+        });
+
+        it('should match custom quotes', () => {
+
+            const registry = Ruby.registry({ quote: ['[(', ')]'] });
+            registry.add({
+                name: 'ban',
+                args: ['member', 'reason'],
+            });
+
+            const match = registry.match('!ban member [(This is the reason)]');
+            const expected = [
+                {
+                    definition: { name: 'ban', args: [{ name: 'member' }, { name: 'reason' }] },
+                    args: { member: 'member', reason: 'This is the reason' },
+                    flags: {},
+                    unknowns: [],
+                },
+            ];
+
+            expect(Bone.equal(match, expected)).toBe(true);
+        });
+
+        it('should match custom flag prefixes', () => {
+
+            const registry = Ruby.registry({ flagPrefix: '::' });
+            registry.add({
+                name: 'ban',
+                args: ['member', 'reason'],
+                flags: [{ name: 'sendBanAppeal', match: 'boolean' }],
+            });
+
+            const match = registry.match('!ban member ::sendBanAppeal "This is the reason"');
+            const expected = [
+                {
+                    definition: {
+                        name: 'ban',
+                        args: [{ name: 'member' }, { name: 'reason' }],
+                        flags: {
+                            sendBanAppeal: { name: 'sendBanAppeal', match: 'boolean' },
+                        },
+                    },
+                    args: { member: 'member', reason: 'This is the reason' },
+                    flags: { sendBanAppeal: true },
+                    unknowns: [],
+                },
+            ];
+
+            expect(Bone.equal(match, expected)).toBe(true);
+        });
+
+        it('should match custom prefixes, delimiters, quotes and flag prefixes at the same time', () => {
+
+            const registry = Ruby.registry({ prefix: '?', flagPrefix: '::', quote: ['[[', ']]'], delimiter: ',' });
+            registry.add({
+                name: 'ban',
+                args: ['member', 'reason'],
+                flags: [{ name: 'sendBanAppeal', match: 'boolean' }],
+            });
+
+            const match = registry.match('?ban  , member,   ::sendBanAppeal ,  [[This is the reason]], unknown');
+            const expected = [
+                {
+                    definition: {
+                        name: 'ban',
+                        args: [{ name: 'member' }, { name: 'reason' }],
+                        flags: {
+                            sendBanAppeal: { name: 'sendBanAppeal', match: 'boolean' },
+                        },
+                    },
+                    args: { member: 'member', reason: 'This is the reason' },
+                    flags: { sendBanAppeal: true },
+                    unknowns: [{ arg: 'unknown' }],
                 },
             ];
 
