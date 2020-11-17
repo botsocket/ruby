@@ -47,6 +47,10 @@ Last, find the matching definitions by parsing the command:
 
 ```js
 const matches = registry.match('!ban member reason');
+if (!matches) {
+    return;
+}
+
 for (const match of matches) {
 
     // Invoke the handler
@@ -91,11 +95,15 @@ const client = new Discord.Client({
     // Stuff
 });
 
-client.connect();
+client.login();
 
 client.on('message', (message) => {
 
     const matches = registry.match(message.content);
+    if (!matches) {
+        return;
+    }
+
     for (const match of matches) {
         match.definition.data.handler(message, match.args, match.flags);
     }
@@ -143,9 +151,73 @@ client.connect();
 client.on('message', (channel, tags, message, self) => {
 
     const matches = registry.match(message);
+    if (!matches) {
+        return;
+    }
+
     for (const match of matches) {
         match.definition.data.handler(client, channel, match.args, match.flags);
     }
 });
+```
+
+### Validating arguments
+
+[Jade](https://github.com/botsocket/jade) can be used in conjunction with Ruby to provide argument validation:
+
+```js
+const Jade = require('@botsocket/jade');
+const Ruby = require('@botsocket/ruby');
+const Discord = require('discord.js');
+
+
+const registry = Ruby.registry();
+
+// !repeat 10 "message"
+
+registry.add({
+    name: 'repeat',
+    args: ['message', 'delay'],
+
+    data: {
+        schema: Jade.object({
+            message: Jade.string().min(5).required(),
+            delay: Jade.number().greater(0),
+        }),
+
+        handler(message, args, flags) {
+
+            // Arguments passed to the handler have been validated
+        }
+    },
+});
+
+const client = new Discord.Client();
+
+client.on('message', (message) => {
+
+    const matches = registry.match(message.content);
+    if (!matches) {
+        return;
+    }
+
+    for (const match of matches) {
+        const { schema, handler } = match.definition.data;
+        if (!schema) {
+            handler(message, match.args, match.flags);
+            return;
+        }
+
+        const result = schema.validate(match.args);
+        if (result.errors) {
+            message.channel.send(result.errors[0].message);
+            return;
+        }
+
+        handler(message, result.value, match.flags);
+    }
+});
+
+client.login();
 ```
 
