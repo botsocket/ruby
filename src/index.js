@@ -177,24 +177,26 @@ internals.Registry = class {
                     continue;
                 }
 
-                const arg = definition.args && definition.args[idx];
-
-                // Content arguments
-
-                if (arg &&
-                    arg.match === 'content') {                                  // (match content)
-
-                    result.args[arg.name] = raw.slice(position);
-                    break;
-                }
-
-                // Match literals/values
+                // Match flag values
 
                 if (flag) {                                                     // (--flag "literal") (--flag value) (--flag list1,list2)
                     result.flags[flag.name] = literal || internals.value(value, flag);
                     flag = null;
+                    position += item.length;
+                    continue;
                 }
-                else if (arg) {                                                 // ("literal") (value) (list1,list2)
+
+                const arg = definition.args && definition.args[idx];
+
+                // Match arguments
+
+                if (arg) {                                                      // ("literal") (value) (list1,list2)
+                    if (arg.match === 'content') {                              // (match content)
+
+                        result.args[arg.name] = raw.slice(position);
+                        break;
+                    }
+
                     result.args[arg.name] = literal || internals.value(value, arg);
                     idx++;
                 }
