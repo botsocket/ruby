@@ -269,7 +269,7 @@ The parser parses flags and arguments in the following order:
 -   Content arguments.
 -   Literal and normal arguments.
 
-Therefore, if a normal flag is defined after a content flag, the parser will consider it the content of preceeding flag. Defining it **immediately after** a content argument will have no effect. Quotes will not be removed if supplied after a content flag or argument.
+Therefore, if a normal flag is defined after a content flag, the parser will consider it the content of preceding flag. Defining it **immediately after** a content argument will have no effect. Quotes will not be removed if supplied after a content flag or argument.
 
 #### `registry.match(message)`
 
