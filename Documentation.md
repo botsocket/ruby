@@ -14,7 +14,7 @@ npm install @botsocket/ruby
 
 ## Usage
 
-Setting up Ruby is often a 3 step process.
+Setting up Ruby is often a 3 step process. You should refer to [API](#api) for certain method signatures.
 
 First, create a new registry. Note that only one registry should be created for the whole application:
 
@@ -58,6 +58,8 @@ for (const match of matches) {
     match.definition.data.handler(match.args, match.flags);
 }
 ```
+
+In the above example, `match` is an object containing information about the command with the [following properties](#match-object)
 
 Usage with Discord.js:
 
@@ -170,10 +172,9 @@ const Jade = require('@botsocket/jade');
 const Ruby = require('@botsocket/ruby');
 const Discord = require('discord.js');
 
-
 const registry = Ruby.registry();
 
-// !repeat 10 "message"
+// !repeat "message" 10
 
 registry.add({
     name: 'repeat',
@@ -220,4 +221,58 @@ client.on('message', (message) => {
 
 client.login();
 ```
+
+## API
+
+-   [`registry()`](#registryoptions)
+    -   [`registry.add()`](#registryadddefinitions)
+    -   [`registry.match()`](#registrymatchmessage)
+    -   [`registry.definitions`](#registrydefinitions)
+
+### `registry(options)`
+
+#### `registry.add(...definitions)`
+
+##### Matching syntax
+
+Ruby matches and parses commands using the following syntax:
+
+```
+[ (prefix) (name) ] (delimiter) [ ("literal") (delimiter) (--flag) (delimiter) (value) (--booleanFlag) (delimiter) (argument) ]
+    [1]: Base                                                            [2]: Arguments
+```
+
+A command is split into 2 components separated by delimiter:
+-   Base: Includes the prefix and name.
+-   Arguments: Includes arguments and flags separated by delimiter.
+
+##### Match object
+
+`registry.add()` returns an array of match objects, each with the following properties:
+
+-   `definition`: A definition object with:
+    -   `name`: The name of the command.
+    -   `alias`: An array of aliases of the command.
+    -   `args`: An array of argument definitions. Not to be confused with parsed arguments.
+    -   `flags`: An array of flag definitions. Not to be confused with parsed flags.
+    -   `data`: The `data` property passed to `registry.add()` left untouched.
+-   `args`: Parsed arguments where each key corresponds to an argument name and each value corresponds to the supplied value extracted from the message.
+-   `flags`: Parsed flags where each key corresponds to a flag name and each value corresponds to the supplied value extracted from the message.
+-   `unknowns`: An array of unknown arguments or flags.
+
+##### Match order/priority
+
+The parser parses flags and arguments in the following order:
+
+-   Content flags.
+-   Normal flags.
+-   Content arguments.
+-   Literal and normal arguments.
+
+Therefore, if a normal flag is defined after a content flag, the parser will consider it the content of preceeding flag. Defining it **immediately after** a content argument will have no effect. Quotes will not be removed if supplied after a content flag or argument.
+
+#### `registry.match(message)`
+
+#### `registry.definitions`
+
 
