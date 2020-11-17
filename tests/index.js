@@ -22,6 +22,27 @@ describe('registry()', () => {
         });
     });
 
+    describe('definitions', () => {
+
+        it('should return all the definitions', () => {
+
+            const registry = Ruby.registry();
+            registry.add({
+                name: 'simple',
+            }, {
+                name: 'complex',
+                args: ['arg1', 'arg2'],
+            });
+
+            const definitions = [
+                { name: 'simple' },
+                { name: 'complex', args: [{ name: 'arg1' }, { name: 'arg2' }] },
+            ];
+
+            expect(Bone.equal(registry.definitions, definitions)).toBe(true);
+        });
+    });
+
     describe('match()', () => {
 
         it('should return null for mismatching prefixes', () => {

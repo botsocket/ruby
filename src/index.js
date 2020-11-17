@@ -47,6 +47,11 @@ internals.Registry = class {
         this._definitions = new internals.Definitions();
     }
 
+    get definitions() {
+
+        return [].concat(...this._definitions.values());
+    }
+
     add(...definitions) {
 
         definitions = Schemas.definitions.attempt(definitions);
