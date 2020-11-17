@@ -26,9 +26,10 @@ internals.Registry = class {
         const prefix = internals.escapeRegex(settings.prefix);
 
         const delimiter = settings.delimiter ? internals.escapeRegex(settings.delimiter) : '';
-        const whitespaces = delimiter ? '\\s*' : '\\s+';
-        const delimiterOrEOL = '(?:' + (delimiter ? whitespaces : '') + delimiter + whitespaces + '|$)';           // Do not use lookahead clauses because we want the delimiter to be included in the matching string
-        const value = '([^' + delimiter + '\\s]+)';
+        const delimiterOrEOL = '(?:' + (delimiter ? '\\s*' + delimiter + '\\s*' : '\\s+') + '|$)';           // Do not use lookahead clauses because we want the delimiter to be included in the matching string
+
+        const ignoreChars = delimiter || '\\s';
+        const value = '([^' + ignoreChars + ']+?)';
 
         const flagPrefix = internals.escapeRegex(settings.flagPrefix);
         const flag = flagPrefix + '(.*?)';
@@ -131,20 +132,14 @@ internals.Registry = class {
             let flag = null;                                                    // Current flag definition
 
             while (true) {                                                      // eslint-disable-line no-constant-condition
+
+                // Content flags
+
                 if (flag &&
                     flag.match === 'content') {                                 // (--flag match content)
 
                     result.flags[flag.name] = raw.slice(position);
                     flag = null;
-                    break;
-                }
-
-                const arg = definition.args && definition.args[idx];
-
-                if (arg &&
-                    arg.match === 'content') {                                  // (match content)
-
-                    result.args[arg.name] = raw.slice(position);
                     break;
                 }
 
@@ -156,45 +151,53 @@ internals.Registry = class {
 
                 const [item, literal, flagName, value] = match;
 
-                // Match literals/values
+                // Match flags
 
-                if (literal ||
-                    value) {
+                if (flagName) {
+                    if (flag) {                                                 // (--booleanFlag) (implicit)
+                        result.flags[flag.name] = true;
+                    }
 
-                    if (flag) {                                                 // (--flag "literal") (--flag value) (--flag list1,list2)
-                        result.flags[flag.name] = literal || internals.value(value, flag);
+                    flag = definition.flags && definition.flags[flagName];
+                    if (!flag) {
+                        result.unknowns.push({ flag: flagName });
                         flag = null;
                     }
-                    else if (arg) {                                             // ("literal") (value) (list1,list2)
-                        result.args[arg.name] = literal || internals.value(value, arg);
-                        idx++;
-                    }
-                    else {
-                        result.unknowns.push({ arg: literal || value });
+                    else if (flag.match === 'boolean') {                        // (--booleanFlag) (explicit)
+                        result.flags[flag.name] = true;
+                        flag = null;
                     }
 
                     position += item.length;
                     continue;
                 }
 
-                // Match flags
+                const arg = definition.args && definition.args[idx];
 
-                if (flag) {                                                     // (--booleanFlag) (implicit)
-                    result.flags[flag.name] = true;
+                // Content arguments
+
+                if (arg &&
+                    arg.match === 'content') {                                  // (match content)
+
+                    result.args[arg.name] = raw.slice(position);
+                    break;
                 }
 
-                flag = definition.flags && definition.flags[flagName];
-                if (!flag) {
-                    result.unknowns.push({ flag: flagName });
+                // Match literals/values
+
+                if (flag) {                                                     // (--flag "literal") (--flag value) (--flag list1,list2)
+                    result.flags[flag.name] = literal || internals.value(value, flag);
                     flag = null;
                 }
-                else if (flag.match === 'boolean') {                            // (--booleanFlag) (explicit)
-                    result.flags[flag.name] = true;
-                    flag = null;
+                else if (arg) {                                                 // ("literal") (value) (list1,list2)
+                    result.args[arg.name] = literal || internals.value(value, arg);
+                    idx++;
+                }
+                else {
+                    result.unknowns.push({ arg: literal || value });
                 }
 
                 position += item.length;
-                continue;
             }
 
             if (flag) {                                                         // (--booleanFlag) (implicit)
