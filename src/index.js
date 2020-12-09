@@ -132,8 +132,8 @@ internals.Registry = class {
             const result = { definition, args: {}, flags: {}, unknowns: [] };
             results.push(result);
 
-            let idx = 0;                                                        // Current arg definition pointer
             let position = 0;                                                   // Current string position
+            let idx = 0;                                                        // Current arg definition index
             let flag = null;                                                    // Current flag definition
 
             while (true) {                                                      // eslint-disable-line no-constant-condition
@@ -192,7 +192,6 @@ internals.Registry = class {
 
                 if (arg) {                                                      // ("literal") (value) (list1,list2)
                     if (arg.match === 'content') {                              // (match content)
-
                         result.args[arg.name] = raw.slice(position);
                         break;
                     }
